@@ -1,0 +1,23 @@
+# Byte-compiled / cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+env/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Data that should NOT be versioned
+data/*.tmp
+data/*.bak
+
+# Python build
+*.egg-info/
+dist/
+build/
