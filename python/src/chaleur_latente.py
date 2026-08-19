@@ -1,57 +1,149 @@
 import numpy as np
 
-def es_eau_goff_gratch_murray(T: float) -> float:
-    """
-    Pression vapeur saturante es(T) pour surface EAU (Pa)
-    Eq. (21) Ding et al. (2026) – Goff-Gratch-Murray
-    T en Kelvin (TwK = Tw + 273.16)
-    """
-    TwK = T + 273.16
 
-    term1 = 7.95357242e1
-    part1 = 18.1972839 * (TwK - 273.16) / 373.16
-    part2 = - 20242.1852 / TwK
-    part3 = 26.1205253 * (TwK / 373.16)
-    part4 = 58.0691913 * (TwK / 373.16)**2
-    part5 = - 8.039282 * (TwK / 373.16)**3
-    part6 = 5.02808 * np.log(TwK / 373.16)
+# ============================================================
+# 1. Eq. 21 — Surface EAU
+# ============================================================
 
-    return term1 * np.exp(part1 + part2 + part3 + part4 + part5 + part6)
+def es_eau_goff_gratch_murray(Tc: float) -> float:
+    Tk = Tc + 273.16
 
-
-def es_glace_goff_gratch_murray(T: float) -> float:
-    """
-    Pression vapeur saturante es(T) pour surface GLACE (Pa)
-    Eq. (22) Ding et al. (2026) – Goff-Gratch-Murray
-    T en Kelvin (TisK = Tis + 273.16)
-    """
-    Tk = T + 273.16
-
-    term1 = 5.75185606e10
-    part1 = 20.947013 * (Tk - 273.16) / 373.16
-    part2 = 3.56654 * np.log(Tk / 373.16)
-    part3 = 2.01889049 * (273.16 / Tk)
-
-    return term1 * np.exp(part1 + part2 + part3)
+    return (
+        7.95357242e10
+        * np.exp(
+            -18.1972839 * (373.16 / Tk)
+            + 5.02808 * np.log(373.16 / Tk)
+            - 20242.1852 * np.exp(-26.1205253 * Tk / 373.16)
+            + 58.0691913 * np.exp(-8.039282 * (373.16 / Tk))
+        )
+    )
 
 
-def chaleur_latente(Ts: float, Ta: float, va: float, HR: float, surface: str) -> float:
-    """
-    Chaleur latente φl (W/m²)
-    Rimsha-Donchenko (1957) – Eq. (24) Ding et al. (2026)
-    φl = (4.1855 / 8.64) * (1.56 * kn + 6.08 * va) * (es - ea)
-    es, ea en Pa (comme dans Ding 2026)
-    surface = "eau" ou "glace"
-    """
-    kn = 8.0 + 0.35 * (Ts - Ta)
+# ============================================================
+# 2. Eq. 22 — Surface GLACE
+# ============================================================
 
-    # es(Ts) selon type de surface
+def es_glace_goff_gratch_murray(Tc: float) -> float:
+    Tk = Tc + 273.16
+
+    return (
+        5.75185606e10
+        * (
+            -20.947013 * (373.16 / Tk)
+            - 3.56654 * np.log(373.16 / Tk)
+            - 2.01889049 * (273.16 / Tk)
+        )
+    )
+
+
+# ============================================================
+# 3. Chaleur latente — Rimsha–Donchenko (1957)
+# ============================================================
+
+def chaleur_latente(
+    Ts: float,
+    Ta: float,
+    va: float,
+    HR: float,
+    surface: str
+) -> float:
+
+    Kn = 8.0 + 0.35 * (Ts - Ta)
+
     if surface == "eau":
-        es = es_eau_goff_gratch_murray(Ts)      # Pa
+        es = es_eau_goff_gratch_murray(Ts)
+        ea_sat = es_eau_goff_gratch_murray(Ta)
+
+    elif surface == "glace":
+        es = es_glace_goff_gratch_murray(Ts)
+        ea_sat = es_glace_goff_gratch_murray(Ta)
+
+        print("----- DEBUG GLACE -----")
+        print("Ts :", Ts)
+        print("Ta :", Ta)
+        print("HR :", HR)
+        print("es glace :", es)
+        print("ea_sat glace :", ea_sat)
+
     else:
-        es = es_glace_goff_gratch_murray(Ts)    # Pa
+        raise ValueError("surface doit être 'eau' ou 'glace'")
 
-    # ea(Ta) avec humidité relative
-    ea = es_eau_goff_gratch_murray(Ta) * HR / 100.0  # Pa
+    ea = ea_sat * HR / 100.0
 
-    return (4.1855 / 8.64) * (1.56 * kn + 6.08 * va) * (es - ea)
+    if surface == "glace":
+        print("ea glace :", ea)
+        print("es - ea :", es - ea)
+        print("----------------------")
+
+    phi_l = (
+        4.1855 / 8.64
+        * (1.56 * Kn + 6.08 * va)
+        * (es - ea)
+    )
+
+    return phi_l
+
+
+# ============================================================
+# 4. Chaleur latente avec fraction de glace Fi
+# ============================================================
+
+def chaleur_latente_totale(
+    Tw: float,
+    Tis: float,
+    Ta: float,
+    va: float,
+    HR: float,
+    Fi: float
+) -> float:
+
+    if Fi < 0.0 or Fi > 1.0:
+        raise ValueError("Fi doit être compris entre 0 et 1.")
+
+    # --------------------------------------------------------
+    # Fi = 0 : surface entièrement en eau
+    # --------------------------------------------------------
+
+    if Fi == 0.0:
+        return chaleur_latente(
+            Ts=Tw,
+            Ta=Ta,
+            va=va,
+            HR=HR,
+            surface="eau"
+        )
+
+    # --------------------------------------------------------
+    # Partie eau
+    # --------------------------------------------------------
+
+    phi_eau = chaleur_latente(
+        Ts=Tw,
+        Ta=Ta,
+        va=va,
+        HR=HR,
+        surface="eau"
+    )
+
+    # --------------------------------------------------------
+    # Partie glace
+    # --------------------------------------------------------
+
+    phi_glace = chaleur_latente(
+        Ts=Tis,
+        Ta=Ta,
+        va=va,
+        HR=HR,
+        surface="glace"
+    )
+
+    # --------------------------------------------------------
+    # Pondération par les fractions de surface
+    # --------------------------------------------------------
+
+    phi_l = (
+        (1.0 - Fi) * phi_eau
+        + Fi * phi_glace
+    )
+
+    return phi_l
