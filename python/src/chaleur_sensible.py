@@ -19,6 +19,7 @@ def chaleur_sensible(Ts, Ta, va, surface="eau", Cc=1.0, A=1.0, rho_a=1.293, Cp=1
         float : Flux de chaleur sensible harmonisé en W/m²
     """
     if surface == "eau":
+        #Ici normalement ça doit rester dans le Méga jouls
         # 1. Surface libre (eau) : Convection
         # Formule : Qc = Cc * A * 0.2 * W * (Ta - Te)  [en MJ/jour]
         
@@ -38,6 +39,7 @@ def chaleur_sensible(Ts, Ta, va, surface="eau", Cc=1.0, A=1.0, rho_a=1.293, Cp=1
         return phi_s
 
     elif surface == "glace":
+        # ici je dois la convertir en Méga jouls
         # 2. Surface de glace
         # Formule : Qs = ρa * Cp * Ks * (Ua - Us) * (Ta - Ts)  [en W/m²]
         Ua = va       # Vitesse du vent dans l'air (m/s)

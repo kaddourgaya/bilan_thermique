@@ -15,16 +15,17 @@ def es_glace_goff_gratch_murray(T):
 
 
 def chaleur_latente(Ts, Ta, va, HR, surface="eau", Pa=1013.25):
+    # faut convertir les deux en méga jouls, maintenant elles sont en W/m^2
     """
     Calcule le flux de chaleur latente pour une surface d'eau libre ou de glace.
     """
     if surface == "eau":
         # Surface d'eau libre
-        Kn = 8 + 0.35 * (Ts - Ta)
+        Kn = 8 + 0.35 * (Ts - Ta) # Ta et Ts en degré C, Kn sans unité
         es = 0.611 * np.exp((17.27 * Ta) / (Ta + 237.3))
         ea = es * (HR / 100.0)
         
-        phi_l = (4.1855 / 8.64) * (1.56 * Kn + 6.08 * va) * (es - ea)
+        phi_l = (4.1855 / 8.64) * (1.56 * Kn + 6.08 * va) * (es - ea) #en W/m^2
         return phi_l
 
     elif surface == "glace":
@@ -34,6 +35,10 @@ def chaleur_latente(Ts, Ta, va, HR, surface="eau", Pa=1013.25):
         Kv = 0.001      # Coefficient d'échange turbulent
         Ua = va         # Vitesse du vent
         Us = 0.0        # Vitesse à la surface
+        
+                
+        # Changer la façon de calculer le qs ici car l'equation n'a meme pas de es et moi je l'utilise ici, juste assurer 
+        #si le es de glace = 6.1078 * np.exp((9.5 * T) / (T + 265.5)) car dans le fichier word n'est pas mentionné explicitement que c'est le es
         
         # Pression de vapeur saturante et réelle de l'air (en hPa)
         es_a = es_eau_goff_gratch_murray(Ta)

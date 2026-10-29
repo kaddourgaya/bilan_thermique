@@ -90,6 +90,7 @@ def main():
 
             # 11. Affichage
             print("---- Nouvelle ligne ----")
+            print("Le Fi est de : ", Fi)
             print("hi utilisé :", hi)
             print("Flux interface eau-air (φaw) :", phi_aw)
             print("Flux interface glace-air (φai) :", phi_ai)
