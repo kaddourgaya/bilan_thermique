@@ -6,15 +6,15 @@ def epaisseur_glace_croissance(alpha_h: float, AFDD: float) -> float:
     Stefan (1889) + Michel (1971)
     η = αh * sqrt(AFDD)
     """
-    return alpha_h * math.sqrt(AFDD)
+    return alpha_h * math.sqrt(AFDD) #ajouter une formule pour le calcul des AFDD
 
-def epaisseur_glace_fonte(eta_max: float, A: float, ATDD: float) -> float:
+def epaisseur_glace_fonte(eta_max, coef_empirique, ATDD):
     """
     Fonte thermique de la glace (m)
     Bilello (1980)
-    η = ηmax - A * ATDD
+    η = ηmax - coef_empirique * ATDD
     """
-    return max(0, eta_max - A * ATDD)
+    return max(0.0, eta_max - coef_empirique * ATDD)
 
 def choisir_hi(Fi: float, Ta: float, hi_mesure: float, hi_croissance: float, hi_fonte: float) -> float:
     """

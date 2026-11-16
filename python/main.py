@@ -3,11 +3,15 @@ import numpy as np
 
 from src.chaleur_sensible import chaleur_sensible
 from src.chaleur_latente import (
-    chaleur_latente,
-    es_eau_goff_gratch_murray,
-    es_glace_goff_gratch_murray
+    chaleur_latente_article,
+    chaleur_latente_cequeau,
+    es_magnus_tetens
 )
-from src.radiation import rayonnement_ondes_courtes, rayonnement_ondes_longues_ding
+from src.radiation import (
+    rayonnement_ondes_courtes,
+    rayonnement_ondes_longues,
+    rayonnement_ondes_longues_ding
+)
 from src.glace import (
     epaisseur_glace_croissance,
     epaisseur_glace_fonte,
@@ -18,15 +22,19 @@ from src.interfaces import flux_eau_air, flux_glace_air
 from src.bilan import flux_net
 
 def main():
-    print("Lecture du fichier exemple.csv et calcul des bilans thermiques...")
+    print("======================================================================")
+    print(" LECTURE DE EXEMPLE_TEST_CORRIGE.CSV ET BILAN THERMIQUE COMPARATIF")
+    print("======================================================================")
 
-    with open("data/exemple.csv", "r") as f:
+    with open("data/exemple_test_corrige.csv", "r") as f:
         reader = csv.DictReader(f)
+        ligne_id = 1
         for row in reader:
 
             # 1. Données d'entrée
             Ta = float(row["Ta"])
             va = float(row["va"])
+            vs = float(row["vs"])
             HR = float(row["HR"])
             Fi = float(row["Fi"])
             Tw = float(row["Tw"])
@@ -37,67 +45,116 @@ def main():
             
             sr_in = float(row["sr_in"])
             sr_out = float(row["sr_out"])
+            lr_in = float(row.get("lr_in", 0.0))
+            lr_out = float(row.get("lr_out", 0.0))
             C = float(row["C"])
             ek = float(row.get("ek", 1.0))
+            Le = float(row.get("Le", 0.0))
+            A_surface = float(row["A"])
+            A_fonte = float(row["A_fonte"])
             
             use_hi_mesure = int(row["use_hi_mesure"])
+            use_lr_mesure = int(row.get("use_lr_mesure", 0))
 
             # 2. Épaisseur théorique de la glace
             alpha_h = 0.6
-            A = 0.5
-
             hi_croissance = epaisseur_glace_croissance(alpha_h, AFDD)
-            hi_fonte = epaisseur_glace_fonte(hi_croissance, A, ATDD)
+            hi_fonte = epaisseur_glace_fonte(hi_croissance, A_fonte, ATDD)
 
             # 3. Choix du hi final
             if use_hi_mesure == 1:
                 hi = hi_mesure
+                source_hi = "Mesuré"
             else:
                 hi = choisir_hi(Fi, Ta, hi_mesure, hi_croissance, hi_fonte)
+                source_hi = "Calculé"
 
-            # 4. Température de surface de la glace
+            # 4. Température de surface de la glace (Tis)
             ka = 0.024
             ki = 2.1
             Tis = temperature_surface_glace(ka, ki, hi, ha, Ta)
 
-            # 5. Températures de surface
+            # 5. Températures de surface selon l'interface
             Ts_aw = Tw
             Ts_ai = Tis
 
-            # 6. Rayonnements en W/m²
+            # 6. Rayonnements (en W/m² puis convertis en MJ/m²/jour via 0.0864)
             phi_sr = rayonnement_ondes_courtes(sr_in, sr_out)
-            phi_lr_aw = rayonnement_ondes_longues_ding(Ts_aw, Ta, HR, C, es_eau_goff_gratch_murray, ek)
-            phi_lr_ai = rayonnement_ondes_longues_ding(Ts_ai, Ta, HR, C, es_glace_goff_gratch_murray, ek)
+            
+            # Calcul Longwave selon Ding et al. (2026) - Conditions Fi
+            phi_lr_w_ding, phi_lr_i_ding = rayonnement_ondes_longues_ding(
+                Tw=Ts_aw, Tis=Ts_ai, Ta=Ta, HR=HR, C=C, Fi=Fi, ek=ek
+            )
+            
+            # Mesure Longwave (Apogee SN500SS)
+            phi_lr_mesure = rayonnement_ondes_longues(lr_in, lr_out)
+
+            #ajouter les données dans le csv pour comparer les 2 ensuite
+            if use_lr_mesure == 1:
+                phi_lr_aw = phi_lr_mesure
+                phi_lr_ai = phi_lr_mesure
+                source_lr = "Mesuré"
+            else:
+                phi_lr_aw = phi_lr_w_ding
+                phi_lr_ai = phi_lr_i_ding
+                source_lr = "Calculé (Ding)"
 
             NetRad_aw_W = phi_sr + phi_lr_aw
             NetRad_ai_W = phi_sr + phi_lr_ai
-
-            # Conversion de W/m² vers MJ/m²/jour (Facteur 0.0864) pour harmonisation CEQUEAU
             NetRad_aw = NetRad_aw_W * 0.0864
             NetRad_ai = NetRad_ai_W * 0.0864
 
-            # 7. Chaleur sensible φs (déjà renvoyée en MJ/jour ou MJ/m²/jour par nos fonctions)
-            phi_s_aw = chaleur_sensible(Ts_aw, Ta, va, surface="eau")
-            phi_s_ai = chaleur_sensible(Ts_ai, Ta, va, surface="glace")
+            # 7. Chaleur sensible φs (en MJ/m²/jour)
+            phi_s_aw = chaleur_sensible(Ts_aw, Ta, va, vs, surface="eau")
+            phi_s_ai = chaleur_sensible(Ts_ai, Ta, va, vs, surface="glace")
 
-            # 8. Chaleur latente φl (déjà convertie en MJ/m²/jour dans chaleur_latente.py)
-            phi_l_aw = chaleur_latente(Ts_aw, Ta, va, HR, surface="eau")
-            phi_l_ai = chaleur_latente(Ts_ai, Ta, va, HR, surface="glace")
+            # --- MÉTHODE 1 : ARTICLE / AÉRODYNAMIQUE ---
+            phi_l_aw_art = chaleur_latente_article(Ts_aw, Ta, va, vs, HR, surface="eau")
+            phi_l_ai_art = chaleur_latente_article(Ts_ai, Ta, va, vs, HR, surface="glace")
+            phi_aw_art = flux_eau_air(NetRad_aw, phi_s_aw, phi_l_aw_art)
+            phi_ai_art = flux_glace_air(NetRad_ai, phi_s_ai, phi_l_ai_art)
+            phi_n_art = flux_net(phi_aw_art, phi_ai_art, Fi)
 
-            # 9. Flux aux interfaces φaw / φai (en MJ/m²/jour)
-            phi_aw = flux_eau_air(NetRad_aw, phi_s_aw, phi_l_aw)
-            phi_ai = flux_glace_air(NetRad_ai, phi_s_ai, phi_l_ai)
+            # --- MÉTHODE 2 : CEQUEAU (basée sur Le, A, et conditions de Fi) ---
+            phi_l_aw_ceq = chaleur_latente_cequeau(Ta, Le, Fi, A_surface, Ce=1.0)
+            phi_l_ai_ceq = chaleur_latente_cequeau(Ta, Le, Fi, A_surface, Ce=1.0)
+            phi_aw_ceq = flux_eau_air(NetRad_aw, phi_s_aw, phi_l_aw_ceq)
+            phi_ai_ceq = flux_glace_air(NetRad_ai, phi_s_ai, phi_l_ai_ceq)
+            phi_n_ceq = flux_net(phi_aw_ceq, phi_ai_ceq, Fi)
 
-            # 10. Bilan thermique net φn (en MJ/m²/jour)
-            phi_n = flux_net(phi_aw, phi_ai, Fi)
+            # Affichage détaillé par simulation
+            print(f"\n--- Simulation #{ligne_id} ---")
+            print(f"  Météo & Paramètres : Ta={Ta}°C | Tw={Tw}°C | Tis={Tis:.2f}°C | HR={HR}% | va={va} m/s | C={C}")
+            print(f"  Couverture Glace   : Fi={Fi} | hi={hi:.3f} m ({source_hi}) | Le={Le} m | A={A_surface} m²")
+            print(f"  Longwave ({source_lr}) : φlr_w={phi_lr_w_ding:.2f} | φlr_i={phi_lr_i_ding:.2f} | φlr_mes={phi_lr_mesure:.2f} W/m²")
+            print(f"  Rayonnements (Net) : NetRad_eau={NetRad_aw:.2f} | NetRad_glace={NetRad_ai:.2f} MJ/m²/j")
+            print(f"  Chaleur Sensible   : φs_eau={phi_s_aw:.2f} | φs_glace={phi_s_ai:.2f} MJ/m²/j")
+            
+            # --- AFFICHAGE APART : COMPARAISON DE LA CHALEUR LATENTE ---
+            if Fi == 0.0:
+                print(f"  >>> [COMPARAISON CHALEUR LATENTE - EAU LIBRE (Fi = 0)]")
+                print(f"      - Article (Aérodynamique) : φl_aw = {phi_l_aw_art:.2f} MJ/m²/j")
+                print(f"      - CEQUEAU (Lame Le)       : φl_aw = {phi_l_aw_ceq:.2f} MJ/m²/j")
+            elif Fi == 1.0:
+                print(f"  >>> [COMPARAISON CHALEUR LATENTE - GLACE COMPLÈTE (Fi = 1)]")
+                print(f"      - Article (Sublimation)   : φl_ai = {phi_l_ai_art:.2f} MJ/m²/j")
+                print(f"      - CEQUEAU (Lame Le)       : φl_ai = {phi_l_ai_ceq:.2f} MJ/m²/j")
+            else:
+                print(f"  >>> [COMPARAISON CHALEUR LATENTE - ÉTAT MIXTE (Fi = {Fi})]")
+                print(f"      - Article : φl_aw={phi_l_aw_art:.2f} | φl_ai={phi_l_ai_art:.2f} MJ/m²/j")
+                print(f"      - CEQUEAU : φl_aw={phi_l_aw_ceq:.2f} | φl_ai={phi_l_ai_ceq:.2f} MJ/m²/j")
 
-            # 11. Affichage formaté
-            print("--------------------------------------------------")
-            print(f"Utiliser hi (mesuré : 1, calculé : 0) : {use_hi_mesure:.0f}")
-            print(f"Fi : {Fi} | Ta : {Ta}°C | hi : {hi:.3f}m")
-            print(f"Flux interface eau-air (φaw) : {phi_aw:.2f} MJ/m²/jour")
-            print(f"Flux interface glace-air (φai) : {phi_ai:.2f} MJ/m²/jour")
-            print(f"Bilan thermique net (φn)       : {phi_n:.2f} MJ/m²/jour")
+            print(f"  ------------------------------------------------------------------")
+            print(f"  [1] Méthode ARTICLE :")
+            print(f"      -> Flux Interfaces : φaw={phi_aw_art:.2f} | φai={phi_ai_art:.2f} MJ/m²/j")
+            print(f"      -> Bilan Net (φn)  : {phi_n_art:.2f} MJ/m²/j")
+            print(f"  [2] Méthode CEQUEAU :")
+            print(f"      -> Flux Interfaces : φaw={phi_aw_ceq:.2f} | φai={phi_ai_ceq:.2f} MJ/m²/j")
+            print(f"      -> Bilan Net (φn)  : {phi_n_ceq:.2f} MJ/m²/j")
+            
+            ligne_id += 1
+
+    print("\n======================================================================")
 
 if __name__ == "__main__":
     main()
